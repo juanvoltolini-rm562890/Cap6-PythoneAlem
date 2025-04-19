@@ -1,0 +1,15 @@
+{
+  "environmental_limits": {
+    "temp_min": 18.0,
+    "temp_max": 32.0,
+    "humidity_min": 50.0,
+    "humidity_max": 70.0,
+    "co2_max": 2000.0,
+    "ammonia_max": 25.0,
+    "pressure_target": 25.0
+  },
+  "reading_interval": 60,
+  "log_level": "INFO",
+  "alarm_enabled": true,
+  "backup_power_threshold": 20
+}
