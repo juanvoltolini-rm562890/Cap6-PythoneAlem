@@ -118,7 +118,7 @@ class MenuManager:
         try:
             # Temperatura
             print("\n--- Configurações de Temperatura ---")
-            temp_target = float(input(f"Temperatura desejada [{(limits.temp_min + limits.temp_max) / 2}°C]: ") or (limits.temp_min + limits.temp_max) / 2)
+            temp_target = float(input(f"Temperatura desejada [{limits.temp_target}°C]: ") or limits.temp_target)
             temp_max = float(input(f"Temperatura máxima (+5°C) [{temp_target + 5}°C]: ") or temp_target + 5)
             temp_min = float(input(f"Temperatura mínima (-5°C) [{temp_target - 5}°C]: ") or temp_target - 5)
             
@@ -135,6 +135,7 @@ class MenuManager:
             pressure_target = float(input(f"Pressão alvo (Pa) [{limits.pressure_target}]: ") or limits.pressure_target)
             
             # Atualizar configurações
+            limits.temp_target = temp_target
             limits.temp_min = temp_min
             limits.temp_max = temp_max
             limits.humidity_min = humidity_min
@@ -557,7 +558,7 @@ class MenuManager:
         print("\n=== Configurações Atuais ===")
         limits = self.config.environmental_limits
         print("\n--- Temperatura ---")
-        print(f"Temperatura desejada: {(limits.temp_min + limits.temp_max) / 2}°C")
+        print(f"Temperatura desejada: {limits.temp_target}°C")
         print(f"Temperatura máxima: {limits.temp_max}°C")
         print(f"Temperatura mínima: {limits.temp_min}°C")
         

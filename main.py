@@ -91,6 +91,7 @@ class AviaryControlSystem:
         # Configuração padrão se nenhuma for carregada
         return SystemConfig(
             environmental_limits=EnvironmentalLimits(
+                temp_target=25.0,
                 temp_min=18.0,
                 temp_max=32.0,
                 humidity_min=50.0,
@@ -268,5 +269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

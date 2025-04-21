@@ -989,6 +989,7 @@ class FileStorage:
         try:
             # Criar configuração padrão
             limits = EnvironmentalLimits(
+                temp_target=25.00,
                 temp_min=18.0,
                 temp_max=32.0,
                 humidity_min=50.0,

@@ -20,6 +20,7 @@ class EnvironmentalLimits:
     """Define os intervalos aceitáveis para parâmetros ambientais.
 
     Atributos:
+        temp_target: Temperatura desejada (°C)
         temp_min: Temperatura mínima aceitável (°C)
         temp_max: Temperatura máxima aceitável (°C)
         humidity_min: Umidade mínima aceitável (%)
@@ -29,6 +30,7 @@ class EnvironmentalLimits:
         pressure_target: Pressão estática alvo (Pa)
     """
 
+    temp_target: float
     temp_min: float
     temp_max: float
     humidity_min: float
@@ -124,6 +126,7 @@ class SystemConfig:
             SystemConfig: Nova instância de configuração
         """
         env_limits = EnvironmentalLimits(
+            temp_target=float(config_dict.get("temp_target", 25.0)),
             temp_min=float(config_dict.get("temp_min", 18.0)),
             temp_max=float(config_dict.get("temp_max", 32.0)),
             humidity_min=float(config_dict.get("humidity_min", 50.0)),

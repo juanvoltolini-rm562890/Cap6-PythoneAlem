@@ -1,7 +1,8 @@
 {
   "environmental_limits": {
-    "temp_min": 18.0,
-    "temp_max": 32.0,
+    "temp_target": 25.00,
+    "temp_min": 5.0,
+    "temp_max": 5.0,
     "humidity_min": 50.0,
     "humidity_max": 70.0,
     "co2_max": 2000.0,
