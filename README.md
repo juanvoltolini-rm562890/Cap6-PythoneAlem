@@ -121,3 +121,18 @@ aviary-control/
 - Python 3.12+
 - Compatível com PEP 8 (88 colunas)
 - Docstrings no estilo Google
+
+## Atualizações Recentes
+
+### Integração do Teste de Conexão Oracle
+
+1. Foi adicionado um método estático `test_connection_fix()` à classe `OracleStorage`
+
+2. Foi adicionado um bloco `if __name__ == "__main__"` ao arquivo `oracle_db.py` que permite executar o teste diretamente:
+   ```bash
+   python -m src.storage.oracle_db
+   ```
+
+3. Os testes unitários foram atualizados para incluir o teste da nova funcionalidade.
+
+Essas alterações mantêm toda a funcionalidade original enquanto simplificam a estrutura do projeto, eliminando a necessidade de um arquivo de teste separado.

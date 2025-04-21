@@ -115,60 +115,14 @@ class DisplayManager:
             logger.debug(line)
 
     def _update_cli(self):
-        """Atualiza a exibição CLI com os dados atuais."""
-        # Limpa a tela
-        os.system("cls" if os.name == "nt" else "clear")
-
-        # Imprime o cabeçalho
-        print("=" * 50)
-        print("Status do Sistema de Controle do Aviário")
-        print("=" * 50)
-        print()
-
-        # Imprime a hora atual
-        print(f"Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print()
-
-        # Imprime leituras dos sensores
-        if self._last_reading:
-            print("Condições Ambientais:")
-            print(f"  Temperatura: {self._last_reading.temperature:5.1f} °C")
-            print(f"  Umidade:     {self._last_reading.humidity:5.1f} %")
-            print(f"  CO2:         {self._last_reading.co2_level:5.0f} ppm")
-            print(f"  Amônia:      {self._last_reading.ammonia_level:5.1f} ppm")
-            print(f"  Pressão:     {self._last_reading.pressure:5.1f} Pa")
-            print()
-
-        # Imprime ações de controle
-        if self._last_action:
-            print("Ações de Controle:")
-            print(f"  Velocidade do Ventilador:  {self._last_action.fan_speed:5.1f} %")
-            print(f"  Posição da Cortina:        {self._last_action.curtain_position:5.1f} %")
-            print(f"  Posição da Entrada de Ar:  {self._last_action.inlet_position:5.1f} %")
-            print(f"  Aquecedores:               {'LIGADO' if self._last_action.heaters_on else 'DESLIGADO'}")
-            print(f"  Nebulizadores:             {'LIGADO' if self._last_action.nebulizers_on else 'DESLIGADO'}")
-            print()
-
-        # Imprime resumo do status dos dispositivos
-        if self._last_devices:
-            print("Status dos Dispositivos:")
-            for device in self._last_devices:
-                status_text = (
-                    f"{device.value:4.1f}%" if device.value is not None else device.state.name
-                )
-                print(f"  {device.device_id}: {status_text:8s}", end="")
-                if device.error_message:
-                    print(f" (ERRO: {device.error_message})")
-                else:
-                    print()
-            print()
-
-        # Imprime mensagem de alarme, se houver
-        if self._last_action and self._last_action.alarm_message:
-            print("!" * 50)
-            print(f"ALARME: {self._last_action.alarm_message}")
-            print("!" * 50)
-            print()
+        """Atualiza a exibição CLI com os dados atuais.
+        
+        Note: Terminal output has been disabled as per requirements.
+        Data is still tracked internally but not displayed.
+        """
+        # Terminal output disabled - data is still tracked internally
+        # but not displayed to keep the terminal clean
+        pass
 
     def _get_status_summary(self) -> str:
         """Obter um breve resumo do status para exibição LCD.
@@ -199,5 +153,6 @@ class DisplayManager:
         return (
             self._last_action.alarm_message if self._last_action else None
         )
+
 
 

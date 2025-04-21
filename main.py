@@ -13,6 +13,7 @@ de controle para o sistema de controle ambiental do aviário.
 """
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
@@ -27,14 +28,20 @@ from src.sensors.reader import ReadingBuffer, SensorReader
 from src.storage.file_storage import FileStorage
 from src.storage.oracle_db import OracleStorage
 
-# Configure logging
+# Ensure logs directory exists
+os.makedirs("data/logs", exist_ok=True)
+
+# Configure logging - only to file, no terminal output
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[
-        logging.FileHandler("aviary_control.log"),
+        logging.FileHandler("data/logs/aviary_control.log"),
     ],
 )
+
+# Configure specific loggers
+logging.getLogger('src.storage.oracle_db').setLevel(logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +49,37 @@ logger = logging.getLogger(__name__)
 class AviaryControlSystem:
     """Classe principal do controlador do sistema."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, use_oracle: bool = True):
         """Inicializa o sistema de controle.
 
         Args:
             config_path: Caminho opcional para o arquivo de configuração
+            use_oracle: Se True, tenta inicializar o armazenamento Oracle com credenciais padrão
         """
         # Inicializar armazenamento
         self.file_storage = FileStorage("data")
-        self.oracle_storage = None  # Será inicializado se as credenciais forem fornecidas
+        self.oracle_storage = None
+        
+        # Inicializar Oracle Storage com credenciais padrão se habilitado
+        if use_oracle:
+            try:
+                logger.info("Tentando inicializar Oracle Storage com credenciais padrão")
+                self.oracle_storage = OracleStorage()
+                self.oracle_storage.connect()
+                connection_ok = self.oracle_storage.test_connection()
+                if connection_ok:
+                    logger.info("Oracle Storage inicializado com sucesso")
+                    # Verificar esquema
+                    schema_status = self.oracle_storage.check_schema_exists()
+                    logger.info(f"Status do esquema Oracle: {schema_status}")
+                else:
+                    logger.warning("Falha no teste de conexão com Oracle. Oracle Storage não será utilizado.")
+                    self.oracle_storage = None
+            except Exception as e:
+                logger.warning(f"Não foi possível inicializar Oracle Storage: {e}")
+                self.oracle_storage = None
+        else:
+            logger.info("Oracle Storage desabilitado por configuração")
 
         # Carregar ou criar configuração
         self.config = self._load_config(config_path)
@@ -112,9 +141,15 @@ class AviaryControlSystem:
         self.file_storage.log_sensor_reading(reading)
         if self.oracle_storage:
             try:
+                logger.info(f"Tentando armazenar leitura do sensor {reading.sensor_id} no Oracle")
                 self.oracle_storage.store_reading(reading)
+                logger.info(f"Leitura do sensor {reading.sensor_id} armazenada com sucesso no Oracle")
             except Exception as e:
-                logger.error(f"Falha ao armazenar leitura no banco de dados: {e}")
+                logger.error(f"Falha ao armazenar leitura no banco de dados Oracle: {e}")
+                logger.error(f"Detalhes da leitura - Sensor: {reading.sensor_id}, Timestamp: {reading.timestamp}")
+                logger.error(f"Tipo de exceção: {type(e).__name__}")
+                import traceback
+                logger.error(f"Stack trace: {traceback.format_exc()}")
 
         # Processar leitura e atualizar dispositivos
         try:
@@ -126,28 +161,44 @@ class AviaryControlSystem:
                 self.file_storage.log_device_status(status)
                 if self.oracle_storage:
                     try:
+                        logger.info(f"Tentando armazenar status do dispositivo {status.device_id} no Oracle")
                         self.oracle_storage.store_device_status(status)
+                        logger.info(f"Status do dispositivo {status.device_id} armazenado com sucesso no Oracle")
                     except Exception as e:
-                        logger.error(f"Falha ao armazenar status do dispositivo: {e}")
+                        logger.error(f"Falha ao armazenar status do dispositivo no Oracle: {e}")
+                        logger.error(f"Detalhes do status - Dispositivo: {status.device_id}, "
+                                    f"Tipo: {status.device_type.name}, Estado: {status.state.name}")
+                        logger.error(f"Tipo de exceção: {type(e).__name__}")
+                        import traceback
+                        logger.error(f"Stack trace: {traceback.format_exc()}")
 
             # Registrar alarmes
             if action and action.alarm_message:
                 self.file_storage.log_alarm(action.alarm_message)
                 if self.oracle_storage:
                     try:
+                        logger.info(f"Tentando armazenar alarme no Oracle: {action.alarm_message}")
                         self.oracle_storage.store_alarm(
                             datetime.now(),
                             "AMBIENTAL",
                             action.alarm_message,
                         )
+                        logger.info("Alarme armazenado com sucesso no Oracle")
                     except Exception as e:
-                        logger.error(f"Falha ao armazenar alarme: {e}")
+                        logger.error(f"Falha ao armazenar alarme no Oracle: {e}")
+                        logger.error(f"Detalhes do alarme - Mensagem: {action.alarm_message}")
+                        logger.error(f"Tipo de exceção: {type(e).__name__}")
+                        import traceback
+                        logger.error(f"Stack trace: {traceback.format_exc()}")
 
             # Atualizar display
             self.display_manager.update(reading, action, [s for _, s in device_status])
 
         except Exception as e:
             logger.error(f"Erro ao processar leitura: {e}")
+            logger.error(f"Tipo de exceção: {type(e).__name__}")
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
 
     def start(self):
         """Inicia o sistema de controle."""
@@ -181,11 +232,47 @@ class AviaryControlSystem:
             host: Host do banco de dados
         """
         try:
+            logger.info(f"Iniciando configuração da conexão Oracle com host: {host}, usuário: {username}")
             self.oracle_storage = OracleStorage(username, password, host)
+            
+            # Tenta estabelecer a conexão
+            logger.info("Tentando estabelecer conexão com o banco de dados Oracle...")
             self.oracle_storage.connect()
-            logger.info("Conexão com banco de dados Oracle configurada")
+            
+            # Testa a conexão para garantir que está funcionando
+            logger.info("Testando conexão com o banco de dados Oracle...")
+            connection_ok = self.oracle_storage.test_connection()
+            
+            if connection_ok:
+                logger.info("Conexão com banco de dados Oracle configurada e testada com sucesso")
+                
+                # Verificar se o esquema do banco de dados está correto
+                logger.info("Verificando esquema do banco de dados Oracle...")
+                schema_status = self.oracle_storage.check_schema_exists()
+                
+                # Verificar se todas as tabelas existem
+                all_tables_exist = all(status for table, status in schema_status.items() 
+                                      if table in ["sensor_readings", "actuator_status", "alarm_events"])
+                
+                # Verificar se todas as sequências existem
+                all_sequences_exist = all(status for table, status in schema_status.items() 
+                                         if table in ["sensor_readings_seq", "actuator_status_seq", "alarm_events_seq"])
+                
+                if all_tables_exist and all_sequences_exist:
+                    logger.info("Esquema do banco de dados Oracle verificado com sucesso")
+                else:
+                    missing_objects = [obj for obj, exists in schema_status.items() if not exists]
+                    logger.warning(f"Esquema do banco de dados Oracle incompleto. Objetos ausentes: {', '.join(missing_objects)}")
+                    logger.warning("As operações de banco de dados podem falhar devido ao esquema incompleto")
+            else:
+                logger.warning("Conexão com banco de dados Oracle configurada, mas o teste de conexão falhou")
+                
         except Exception as e:
             logger.error(f"Falha ao configurar conexão Oracle: {e}")
+            logger.error(f"Detalhes da conexão - Host: {host}, Usuário: {username}")
+            logger.error(f"Tipo de exceção: {type(e).__name__}")
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             self.oracle_storage = None
 
 
@@ -217,13 +304,26 @@ def main():
         action="store_true",
         help="Executar sem interface interativa",
     )
+    parser.add_argument(
+        "--no-oracle",
+        action="store_true",
+        help="Desabilitar conexão com banco de dados Oracle",
+    )
     args = parser.parse_args()
 
     # Inicializar sistema
-    system = AviaryControlSystem(args.config)
+    use_oracle = not args.no_oracle
+    system = AviaryControlSystem(args.config, use_oracle=use_oracle)
+    
+    # Log do status do Oracle
+    if system.oracle_storage:
+        logger.info("Sistema inicializado com suporte a Oracle Database")
+    else:
+        logger.info("Sistema inicializado sem suporte a Oracle Database")
 
-    # Configurar Oracle se as credenciais forem fornecidas
+    # Configurar Oracle com credenciais específicas se fornecidas
     if all([args.oracle_user, args.oracle_password, args.oracle_host]):
+        logger.info("Reconfigurando Oracle com credenciais fornecidas via linha de comando")
         system.configure_oracle(
             args.oracle_user,
             args.oracle_password,
@@ -268,5 +368,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
 
 
