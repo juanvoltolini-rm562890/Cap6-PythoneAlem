@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import oracledb
 
+from db import config
+from src.models.config import EnvironmentalLimits, SystemConfig
 from ..models.device import DeviceStatus
 from ..models.sensor_data import SensorReading
 
@@ -17,9 +19,9 @@ class OracleStorage:
 
     def __init__(
             self,
-            username: str = "rm563348",
-            password: str = "220982",
-            dsn: str = "oracle.fiap.com.br/orcl",
+            username: config.username,
+            password: config.password,
+            dsn: config.dsn,
     ):
         """Inicializa a conexão com o banco de dados Oracle.
 
@@ -39,13 +41,13 @@ class OracleStorage:
         try:
             logger.info(f"Tentando conectar ao banco de dados Oracle: {self.dsn}")
             logger.debug(f"Parâmetros de conexão - Usuário: {self.username}, DSN: {self.dsn}")
-            
+
             self._connection = oracledb.connect(
                 user=self.username,
                 password=self.password,
                 dsn=self.dsn,
             )
-            
+
             # Obter informações da versão do banco de dados
             with self._connection.cursor() as cursor:
                 cursor.execute("SELECT BANNER FROM V$VERSION")
@@ -455,6 +457,66 @@ class OracleStorage:
                 logger.error(f"❌ Conexão falhou com erro inesperado: {e}")
                 return False
 
+    def load_config(self) -> SystemConfig:
+        """Carrega a configuração do sistema a partir do banco Oracle."""
+        self._ensure_connection()
+        sql = """
+            SELECT param_name, param_value
+            FROM system_config
+        """
+        try:
+            with self._connection.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+                config_dict = {name.lower(): float(value) for name, value in rows}
+
+            limits = EnvironmentalLimits(
+                temp_min=config_dict["temp_min"],
+                temp_max=config_dict["temp_max"],
+                humidity_min=config_dict["humidity_min"],
+                humidity_max=config_dict["humidity_max"],
+                co2_max=config_dict["co2_max"],
+                ammonia_max=config_dict["ammonia_max"],
+                pressure_target=config_dict["pressure_target"]
+            )
+            return SystemConfig(environmental_limits=limits)
+
+        except Exception as e:
+            logger.error(f"Erro ao carregar configuração do Oracle: {e}")
+            raise
+
+    def save_config(self, config: SystemConfig):
+        """Salva a configuração do sistema no banco Oracle."""
+        self._ensure_connection()
+        sql = """
+            UPDATE system_config
+            SET param_value = :param_value, updated_at = CURRENT_TIMESTAMP
+            WHERE param_name = :param_name
+        """
+        try:
+            params = {
+                "temp_min": config.environmental_limits.temp_min,
+                "temp_max": config.environmental_limits.temp_max,
+                "humidity_min": config.environmental_limits.humidity_min,
+                "humidity_max": config.environmental_limits.humidity_max,
+                "co2_max": config.environmental_limits.co2_max,
+                "ammonia_max": config.environmental_limits.ammonia_max,
+                "pressure_target": config.environmental_limits.pressure_target,
+            }
+
+            with self._connection.cursor() as cursor:
+                for name, value in params.items():
+                    cursor.execute(sql, {
+                        "param_name": name,
+                        "param_value": str(value)  # Conversão para string pois a coluna é VARCHAR
+                    })
+            self._connection.commit()
+            logger.info("Configuração do sistema atualizada no Oracle com sucesso.")
+        except Exception as e:
+            logger.error(f"Erro ao salvar configuração no Oracle: {e}")
+            self._connection.rollback()
+            raise
+
 
 if __name__ == "__main__":
     # Configure logging for direct execution
@@ -472,5 +534,4 @@ if __name__ == "__main__":
         print("Test passed! The fix works correctly.")
     else:
         print("Test failed! The fix did not resolve the issue.")
-
 

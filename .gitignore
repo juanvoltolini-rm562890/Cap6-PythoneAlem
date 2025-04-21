@@ -1,2 +1,4 @@
 venv
 aviary_control.log
+/.idea/*
+/data/logs/*

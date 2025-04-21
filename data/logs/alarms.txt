@@ -1,1 +1,5 @@
 2025-04-19 11:07:47 [ERROR] Teste
+2025-04-21 08:38:47 [ERROR] Nível alto de amônia: 10.6 ppm
+2025-04-21 10:36:12 [ERROR] Temperatura crítica alta: 25.9°C
+2025-04-21 10:37:14 [ERROR] Temperatura crítica alta: 25.8°C
+2025-04-21 10:40:16 [ERROR] Temperatura crítica alta: 26.6°C

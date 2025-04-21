@@ -145,8 +145,9 @@ class MenuManager:
             
             # Salvar configurações
             self.file_storage.save_config(self.config)
-            print("\nParâmetros atualizados com sucesso!")
-            
+            if self.oracle_storage:
+                self.oracle_storage.save_config(self.config)
+
         except ValueError:
             print("Erro: Por favor, insira apenas valores numéricos.")
         except Exception as e:

@@ -1,12 +1,12 @@
 {
   "environmental_limits": {
-    "temp_min": 18.0,
-    "temp_max": 32.0,
-    "humidity_min": 50.0,
-    "humidity_max": 70.0,
-    "co2_max": 2000.0,
-    "ammonia_max": 25.0,
-    "pressure_target": 25.0
+    "temp_min": -4.0,
+    "temp_max": 6.0,
+    "humidity_min": 52.0,
+    "humidity_max": 72.0,
+    "co2_max": 2001.0,
+    "ammonia_max": 26.0,
+    "pressure_target": 27.0
   },
   "reading_interval": 60,
   "log_level": "INFO",

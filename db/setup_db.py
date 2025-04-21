@@ -1,19 +1,12 @@
-import os
 import oracledb
-
-# Credenciais do banco de dados
-username = "rm563348"
-password = "220982"
-dsn = "oracle.fiap.com.br/orcl"
-schema = "rm563348"
-
+import config
 # Caminho do arquivo SQL
 script_path = "db/schema.sql"
 
 try:
     # Conectar ao banco de dados
     print("Conectando ao banco de dados...")
-    connection = oracledb.connect(user=username, password=password, dsn=dsn)
+    connection = oracledb.connect(user=config.username, password=config.password, dsn=config.dsn)
     cursor = connection.cursor()
 
     # Ler o script SQL completo
@@ -21,7 +14,7 @@ try:
         sql_script = file.read()
 
     # Substituir o placeholder :SCHEMA pelo nome real do schema
-    sql_script = sql_script.replace(":SCHEMA", schema)
+    sql_script = sql_script.replace(":SCHEMA", config.schema)
 
     print("Executando o script...")
 

@@ -20,6 +20,7 @@ import threading
 from datetime import datetime
 from typing import Optional
 
+from db import config
 from src.actuators.controller import DeviceController
 from src.core.control import EnvironmentController
 from src.core.display import DisplayManager
@@ -64,7 +65,7 @@ class AviaryControlSystem:
         if use_oracle:
             try:
                 logger.info("Tentando inicializar Oracle Storage com credenciais padrão")
-                self.oracle_storage = OracleStorage()
+                self.oracle_storage = OracleStorage(config.username, config.password, config.dsn)
                 self.oracle_storage.connect()
                 connection_ok = self.oracle_storage.test_connection()
                 if connection_ok:
