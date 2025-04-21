@@ -54,6 +54,7 @@ CREATE SEQUENCE event_seq START WITH 1 INCREMENT BY 1;
 
 -- Valores Padrão de Configuração
 INSERT INTO system_config (config_id, param_name, param_value) VALUES
+(config_seq.NEXTVAL, 'temp_target', '25.0'),
 (config_seq.NEXTVAL, 'temp_max', '32.0'),
 (config_seq.NEXTVAL, 'temp_min', '18.0'),
 (config_seq.NEXTVAL, 'humidity_max', '70.0'),
