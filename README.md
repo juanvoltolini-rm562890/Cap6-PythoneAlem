@@ -57,16 +57,16 @@ pip install -r requirements.txt
 No terminal, execute:
 
 ```bash
-export DB_USERNAME="rm563348"
-export DB_PASSWORD="220982"
+export DB_USERNAME="rmXXXXXX"
+export DB_PASSWORD="XXXXXX"
 export DB_DSN="oracle.fiap.com.br/orcl"
 ```
 
 Opcionalmente, você pode adicionar essas variáveis ao arquivo `~/.zshrc` (se estiver usando o Zsh, que é o padrão no macOS) ou ao `~/.bash_profile`, caso esteja usando o Bash:
 
 ```bash
-echo 'export DB_USERNAME="rm563348"' >> ~/.zshrc
-echo 'export DB_PASSWORD="220982"' >> ~/.zshrc
+echo 'export DB_USERNAME="rmXXXXXX"' >> ~/.zshrc
+echo 'export DB_PASSWORD="XXXXXX"' >> ~/.zshrc
 echo 'export DB_DSN="oracle.fiap.com.br/orcl"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -90,12 +90,40 @@ Se o banco de dados estiver configurado corretamente, o script será executado e
 python main.py
 ```
 
-2. Opções do Menu CLI:
+2. Opções de linha de comando:
+```
+--config PATH           Caminho para o arquivo de configuração
+--oracle-user USER      Nome de usuário do banco de dados Oracle
+--oracle-password PASS  Senha do banco de dados Oracle
+--oracle-host HOST      Host do banco de dados Oracle
+--no-menu               Executar sem interface interativa
+--no-oracle             Desabilitar conexão com banco de dados Oracle
+--use-mock-data         Forçar o uso de dados simulados mesmo com Oracle disponível
+```
+
+3. Opções do Menu CLI:
 - 1: Visualizar leituras atuais
 - 2: Configurar limites
 - 3: Testar atuadores
 - 4: Visualizar logs
 - 5: Sair
+
+### Exemplos de uso
+
+Para executar com dados simulados (sem tentar conectar ao Oracle):
+```bash
+python main.py --use-mock-data
+```
+
+Para executar sem interface interativa e sem Oracle:
+```bash
+python main.py --no-menu --no-oracle
+```
+
+Para executar com credenciais Oracle específicas:
+```bash
+python main.py --oracle-user "username" --oracle-password "password" --oracle-host "host"
+```
 
 ## Estrutura do Projeto
 
@@ -123,6 +151,14 @@ aviary-control/
 - Docstrings no estilo Google
 
 ## Atualizações Recentes
+
+### Suporte a Dados Simulados
+
+1. Foi adicionada a opção `--use-mock-data` para forçar o uso de dados simulados mesmo quando o Oracle está disponível.
+
+2. O sistema agora detecta automaticamente falhas na conexão Oracle e usa dados simulados como fallback.
+
+3. Foram adicionados testes unitários para verificar o funcionamento correto do modo de dados simulados.
 
 ### Integração do Teste de Conexão Oracle
 

@@ -1,15 +1,15 @@
 {
-  "environmental_limits": {
-    "temp_min": -4.0,
-    "temp_max": 6.0,
-    "humidity_min": 52.0,
-    "humidity_max": 72.0,
-    "co2_max": 2001.0,
-    "ammonia_max": 26.0,
-    "pressure_target": 27.0
-  },
+  "temp_min": 22.0,
+  "temp_max": 30.0,
+  "humidity_min": 50.0,
+  "humidity_max": 68.0,
+  "co2_max": 2100.0,
+  "ammonia_max": 24.0,
+  "pressure_target": 26.0,
   "reading_interval": 60,
   "log_level": "INFO",
   "alarm_enabled": true,
-  "backup_power_threshold": 20
+  "backup_power_threshold": 20,
+  "persistence_mode": "auto",
+  "custom_alerts": []
 }

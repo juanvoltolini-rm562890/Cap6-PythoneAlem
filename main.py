@@ -50,37 +50,104 @@ logger = logging.getLogger(__name__)
 class AviaryControlSystem:
     """Classe principal do controlador do sistema."""
 
-    def __init__(self, config_path: Optional[str] = None, use_oracle: bool = True):
+    def __init__(self, config_path: Optional[str] = None, use_oracle: bool = True, force_mock_data: bool = False):
         """Inicializa o sistema de controle.
 
         Args:
             config_path: Caminho opcional para o arquivo de configuração
             use_oracle: Se True, tenta inicializar o armazenamento Oracle com credenciais padrão
+            force_mock_data: Se True, força o uso de dados simulados mesmo com Oracle disponível
         """
         # Inicializar armazenamento
         self.file_storage = FileStorage("data")
         self.oracle_storage = None
+        self.using_mock_data = force_mock_data
         
+        # Se forçar dados simulados, não tenta conectar ao Oracle
+        if force_mock_data:
+            logger.info("Uso de dados simulados forçado por configuração. Oracle Storage não será utilizado.")
+            self.using_mock_data = True
+            print("AVISO: Usando dados simulados conforme solicitado. Os dados NÃO serão persistidos no Oracle.")
         # Inicializar Oracle Storage com credenciais padrão se habilitado
-        if use_oracle:
+        elif use_oracle:
             try:
                 logger.info("Tentando inicializar Oracle Storage com credenciais padrão")
+                print("Tentando conectar ao Oracle Database com credenciais padrão...")
                 self.oracle_storage = OracleStorage(config.username, config.password, config.dsn)
                 self.oracle_storage.connect()
                 connection_ok = self.oracle_storage.test_connection()
                 if connection_ok:
                     logger.info("Oracle Storage inicializado com sucesso")
+                    print("Conexão com Oracle Database estabelecida com sucesso.")
                     # Verificar esquema
                     schema_status = self.oracle_storage.check_schema_exists()
                     logger.info(f"Status do esquema Oracle: {schema_status}")
+                    
+                    # Verificar se todas as tabelas existem
+                    required_tables = ["sensor_readings", "actuator_status", "alarm_events", "system_config"]
+                    all_tables_exist = all(schema_status.get(table, False) for table in required_tables)
+                    
+                    # Verificar se todas as sequências existem
+                    required_sequences = ["reading_seq", "status_seq", "event_seq", "config_seq"]
+                    all_sequences_exist = all(schema_status.get(seq, False) for seq in required_sequences)
+                    
+                    if not (all_tables_exist and all_sequences_exist):
+                        missing_objects = [obj for obj in required_tables + required_sequences if not schema_status.get(obj, False)]
+                        logger.warning(f"Esquema do banco de dados Oracle incompleto. Objetos ausentes: {', '.join(missing_objects)}")
+                        print(f"AVISO: Esquema do banco de dados Oracle incompleto. Tentando criar...")
+                        
+                        # Tentar inicializar o esquema
+                        try:
+                            from db.setup_db import initialize_schema
+                            schema_success = initialize_schema(config.username, config.password, config.dsn)
+                            if schema_success:
+                                print("Esquema do banco de dados Oracle criado com sucesso.")
+                                self.using_mock_data = False
+                            else:
+                                print("ERRO: Falha ao criar esquema do banco de dados Oracle.")
+                                print("      Os dados serão salvos localmente.")
+                                self.using_mock_data = True
+                        except Exception as e:
+                            logger.error(f"Falha ao inicializar esquema: {e}")
+                            print(f"ERRO: Falha ao criar esquema do banco de dados Oracle: {str(e)}")
+                            print("      Os dados serão salvos localmente.")
+                            self.using_mock_data = True
+                    else:
+                        print("Esquema do banco de dados Oracle verificado com sucesso.")
+                        self.using_mock_data = False
+                    
+                    # Verificar se há dados reais ou se serão usados dados simulados
+                    try:
+                        readings = self.oracle_storage.get_latest_readings(1)
+                        if not readings:
+                            logger.info("Nenhum dado encontrado no Oracle. Serão usados dados simulados.")
+                            print("AVISO: Nenhum dado encontrado no Oracle. Serão usados dados simulados inicialmente.")
+                            self.using_mock_data = True
+                        else:
+                            logger.info(f"Dados encontrados no Oracle: {len(readings)} leituras.")
+                            print(f"Dados encontrados no Oracle: {len(readings)} leituras.")
+                            self.using_mock_data = False
+                    except Exception as e:
+                        logger.warning(f"Erro ao verificar dados no Oracle: {e}")
+                        print(f"AVISO: Erro ao verificar dados no Oracle: {str(e)}")
+                        print("       Serão usados dados simulados inicialmente.")
+                        self.using_mock_data = True
                 else:
                     logger.warning("Falha no teste de conexão com Oracle. Oracle Storage não será utilizado.")
+                    print("ERRO: Falha no teste de conexão com Oracle Database.")
+                    print("      Os dados serão salvos localmente.")
                     self.oracle_storage = None
+                    self.using_mock_data = True
             except Exception as e:
                 logger.warning(f"Não foi possível inicializar Oracle Storage: {e}")
+                print(f"ERRO: Não foi possível conectar ao Oracle Database: {str(e)}")
+                print("      Os dados serão salvos localmente.")
                 self.oracle_storage = None
+                self.using_mock_data = True
         else:
             logger.info("Oracle Storage desabilitado por configuração")
+            print("Oracle Storage desabilitado por configuração. Os dados serão salvos localmente.")
+            self.using_mock_data = True
 
         # Carregar ou criar configuração
         self.config = self._load_config(config_path)
@@ -140,7 +207,9 @@ class AviaryControlSystem:
         # Armazenar leitura
         self.reading_buffer.add_reading(reading)
         self.file_storage.log_sensor_reading(reading)
-        if self.oracle_storage:
+        
+        # Se estiver usando dados simulados, não tenta armazenar no Oracle
+        if self.oracle_storage and not self.using_mock_data:
             try:
                 logger.info(f"Tentando armazenar leitura do sensor {reading.sensor_id} no Oracle")
                 self.oracle_storage.store_reading(reading)
@@ -151,6 +220,15 @@ class AviaryControlSystem:
                 logger.error(f"Tipo de exceção: {type(e).__name__}")
                 import traceback
                 logger.error(f"Stack trace: {traceback.format_exc()}")
+                
+                # Exibir mensagem de erro para o usuário
+                print(f"ERRO: Falha ao armazenar leitura no Oracle Database: {str(e)}")
+                print("      Os dados continuarão sendo salvos localmente.")
+                
+                # Marcar para usar dados simulados após falha
+                self.using_mock_data = True
+        elif self.using_mock_data:
+            logger.info(f"Usando dados simulados - leitura do sensor {reading.sensor_id} não será armazenada no Oracle")
 
         # Processar leitura e atualizar dispositivos
         try:
@@ -160,7 +238,8 @@ class AviaryControlSystem:
             # Registrar status dos dispositivos
             for device_id, status in device_status:
                 self.file_storage.log_device_status(status)
-                if self.oracle_storage:
+                # Se estiver usando dados simulados, não tenta armazenar no Oracle
+                if self.oracle_storage and not self.using_mock_data:
                     try:
                         logger.info(f"Tentando armazenar status do dispositivo {status.device_id} no Oracle")
                         self.oracle_storage.store_device_status(status)
@@ -172,11 +251,21 @@ class AviaryControlSystem:
                         logger.error(f"Tipo de exceção: {type(e).__name__}")
                         import traceback
                         logger.error(f"Stack trace: {traceback.format_exc()}")
+                        
+                        # Exibir mensagem de erro para o usuário
+                        print(f"ERRO: Falha ao armazenar status do dispositivo no Oracle Database: {str(e)}")
+                        print("      Os dados continuarão sendo salvos localmente.")
+                        
+                        # Marcar para usar dados simulados após falha
+                        self.using_mock_data = True
+                elif self.using_mock_data:
+                    logger.info(f"Usando dados simulados - status do dispositivo {status.device_id} não será armazenado no Oracle")
 
             # Registrar alarmes
             if action and action.alarm_message:
                 self.file_storage.log_alarm(action.alarm_message)
-                if self.oracle_storage:
+                # Se estiver usando dados simulados, não tenta armazenar no Oracle
+                if self.oracle_storage and not self.using_mock_data:
                     try:
                         logger.info(f"Tentando armazenar alarme no Oracle: {action.alarm_message}")
                         self.oracle_storage.store_alarm(
@@ -191,6 +280,15 @@ class AviaryControlSystem:
                         logger.error(f"Tipo de exceção: {type(e).__name__}")
                         import traceback
                         logger.error(f"Stack trace: {traceback.format_exc()}")
+                        
+                        # Exibir mensagem de erro para o usuário
+                        print(f"ERRO: Falha ao armazenar alarme no Oracle Database: {str(e)}")
+                        print("      Os dados continuarão sendo salvos localmente.")
+                        
+                        # Marcar para usar dados simulados após falha
+                        self.using_mock_data = True
+                elif self.using_mock_data:
+                    logger.info(f"Usando dados simulados - alarme não será armazenado no Oracle")
 
             # Atualizar display
             self.display_manager.update(reading, action, [s for _, s in device_status])
@@ -200,6 +298,9 @@ class AviaryControlSystem:
             logger.error(f"Tipo de exceção: {type(e).__name__}")
             import traceback
             logger.error(f"Stack trace: {traceback.format_exc()}")
+            
+            # Exibir mensagem de erro para o usuário
+            print(f"ERRO: Falha ao processar leitura do sensor: {str(e)}")
 
     def start(self):
         """Inicia o sistema de controle."""
@@ -224,25 +325,71 @@ class AviaryControlSystem:
             self.oracle_storage.disconnect()
         logger.info("Sistema de controle parado")
 
-    def configure_oracle(self, username: str, password: str, host: str):
+    def configure_oracle(self, username: str, password: str, host: str) -> bool:
         """Configura a conexão com o banco de dados Oracle.
 
         Args:
             username: Nome de usuário do banco de dados
             password: Senha do banco de dados
             host: Host do banco de dados
+            
+        Returns:
+            bool: True se a conexão foi estabelecida com sucesso, False caso contrário
         """
+        # Se estiver usando dados simulados, não configura Oracle
+        if self.using_mock_data and self.oracle_storage is None:
+            logger.info("Sistema configurado para usar dados simulados. Configuração Oracle ignorada.")
+            return False
+            
         try:
             logger.info(f"Iniciando configuração da conexão Oracle com host: {host}, usuário: {username}")
+            
+            # Se já existe uma conexão, desconectar primeiro
+            if self.oracle_storage:
+                try:
+                    logger.info("Desconectando da conexão Oracle existente...")
+                    self.oracle_storage.disconnect()
+                except Exception as e:
+                    logger.warning(f"Erro ao desconectar da conexão existente: {e}")
+            
+            # Criar nova instância do OracleStorage
             self.oracle_storage = OracleStorage(username, password, host)
             
-            # Tenta estabelecer a conexão
-            logger.info("Tentando estabelecer conexão com o banco de dados Oracle...")
-            self.oracle_storage.connect()
+            # Tenta estabelecer a conexão com retry
+            max_retries = 3
+            retry_count = 0
+            connection_ok = False
+            last_exception = None
             
-            # Testa a conexão para garantir que está funcionando
-            logger.info("Testando conexão com o banco de dados Oracle...")
-            connection_ok = self.oracle_storage.test_connection()
+            while retry_count < max_retries and not connection_ok:
+                try:
+                    logger.info(f"Tentativa {retry_count + 1} de {max_retries} para conectar ao banco de dados Oracle...")
+                    self.oracle_storage.connect()
+                    
+                    # Testa a conexão para garantir que está funcionando
+                    logger.info("Testando conexão com o banco de dados Oracle...")
+                    connection_ok = self.oracle_storage.test_connection()
+                    
+                    if connection_ok:
+                        logger.info("Teste de conexão bem-sucedido")
+                        break
+                    else:
+                        logger.warning("Teste de conexão falhou. A conexão não está respondendo corretamente.")
+                        last_exception = Exception("Conexão estabelecida, mas não está respondendo corretamente")
+                    
+                except Exception as e:
+                    logger.warning(f"Tentativa {retry_count + 1} falhou: {str(e)}")
+                    last_exception = e
+                    
+                # Incrementar contador de tentativas
+                retry_count += 1
+                
+                # Aguardar antes de tentar novamente (backoff exponencial)
+                if retry_count < max_retries and not connection_ok:
+                    import time
+                    wait_time = 2 * (2 ** (retry_count - 1))  # 2, 4, 8... segundos
+                    logger.info(f"Aguardando {wait_time} segundos antes da próxima tentativa...")
+                    time.sleep(wait_time)
             
             if connection_ok:
                 logger.info("Conexão com banco de dados Oracle configurada e testada com sucesso")
@@ -252,21 +399,70 @@ class AviaryControlSystem:
                 schema_status = self.oracle_storage.check_schema_exists()
                 
                 # Verificar se todas as tabelas existem
-                all_tables_exist = all(status for table, status in schema_status.items() 
-                                      if table in ["sensor_readings", "actuator_status", "alarm_events"])
+                required_tables = ["sensor_readings", "actuator_status", "alarm_events", "system_config"]
+                all_tables_exist = all(schema_status.get(table, False) for table in required_tables)
                 
                 # Verificar se todas as sequências existem
-                all_sequences_exist = all(status for table, status in schema_status.items() 
-                                         if table in ["sensor_readings_seq", "actuator_status_seq", "alarm_events_seq"])
+                required_sequences = ["reading_seq", "status_seq", "event_seq", "config_seq"]
+                all_sequences_exist = all(schema_status.get(seq, False) for seq in required_sequences)
                 
                 if all_tables_exist and all_sequences_exist:
                     logger.info("Esquema do banco de dados Oracle verificado com sucesso")
+                    # Desativa o uso de dados simulados, pois tudo está correto
+                    self.using_mock_data = False
+                    return True
                 else:
-                    missing_objects = [obj for obj, exists in schema_status.items() if not exists]
+                    missing_objects = [obj for obj in required_tables + required_sequences if not schema_status.get(obj, False)]
                     logger.warning(f"Esquema do banco de dados Oracle incompleto. Objetos ausentes: {', '.join(missing_objects)}")
                     logger.warning("As operações de banco de dados podem falhar devido ao esquema incompleto")
+                    
+                    # Tentar inicializar o esquema
+                    try:
+                        logger.info("Tentando inicializar o esquema do banco de dados Oracle...")
+                        from db.setup_db import initialize_schema
+                        schema_success = initialize_schema(username, password, host)
+                        
+                        if schema_success:
+                            logger.info("Esquema do banco de dados Oracle inicializado com sucesso")
+                            
+                            # Verificar novamente o esquema
+                            schema_status = self.oracle_storage.check_schema_exists()
+                            all_tables_exist = all(schema_status.get(table, False) for table in required_tables)
+                            all_sequences_exist = all(schema_status.get(seq, False) for seq in required_sequences)
+                            
+                            if all_tables_exist and all_sequences_exist:
+                                logger.info("Esquema do banco de dados Oracle inicializado com sucesso")
+                                # Desativa o uso de dados simulados, pois o esquema foi criado
+                                self.using_mock_data = False
+                                return True
+                            else:
+                                still_missing = [obj for obj in required_tables + required_sequences if not schema_status.get(obj, False)]
+                                logger.warning(f"Esquema ainda incompleto após inicialização. Objetos ausentes: {', '.join(still_missing)}")
+                                logger.warning("Não foi possível inicializar completamente o esquema do banco de dados Oracle")
+                                # Como o esquema está incompleto, vamos usar dados simulados
+                                self.using_mock_data = True
+                                return False
+                        else:
+                            logger.error("Falha ao inicializar esquema do banco de dados Oracle")
+                            # Como houve falha, vamos usar dados simulados
+                            self.using_mock_data = True
+                            return False
+                    except Exception as e:
+                        logger.error(f"Falha ao inicializar esquema do banco de dados Oracle: {e}")
+                        logger.error(f"Tipo de exceção: {type(e).__name__}")
+                        import traceback
+                        logger.error(f"Stack trace: {traceback.format_exc()}")
+                        # Como houve exceção, vamos usar dados simulados
+                        self.using_mock_data = True
+                        return False
             else:
                 logger.warning("Conexão com banco de dados Oracle configurada, mas o teste de conexão falhou")
+                if last_exception:
+                    logger.error(f"Último erro encontrado: {str(last_exception)}")
+                # Como a conexão falhou, vamos usar dados simulados
+                self.using_mock_data = True
+                logger.info("Usando dados simulados devido à falha na conexão")
+                return False
                 
         except Exception as e:
             logger.error(f"Falha ao configurar conexão Oracle: {e}")
@@ -275,6 +471,10 @@ class AviaryControlSystem:
             import traceback
             logger.error(f"Stack trace: {traceback.format_exc()}")
             self.oracle_storage = None
+            # Como houve exceção, vamos usar dados simulados
+            self.using_mock_data = True
+            logger.info("Usando dados simulados devido a erro na configuração Oracle")
+            return False
 
 
 def main():
@@ -310,26 +510,45 @@ def main():
         action="store_true",
         help="Desabilitar conexão com banco de dados Oracle",
     )
+    parser.add_argument(
+        "--use-mock-data",
+        action="store_true",
+        help="Forçar o uso de dados simulados mesmo com Oracle disponível",
+    )
     args = parser.parse_args()
 
     # Inicializar sistema
     use_oracle = not args.no_oracle
-    system = AviaryControlSystem(args.config, use_oracle=use_oracle)
+    force_mock_data = args.use_mock_data
+    system = AviaryControlSystem(args.config, use_oracle=use_oracle, force_mock_data=force_mock_data)
     
-    # Log do status do Oracle
-    if system.oracle_storage:
-        logger.info("Sistema inicializado com suporte a Oracle Database")
+    # Log do status do Oracle e dados simulados
+    if system.oracle_storage and not system.using_mock_data:
+        logger.info("Sistema inicializado com suporte a Oracle Database usando dados reais")
+    elif system.oracle_storage and system.using_mock_data:
+        logger.info("Sistema inicializado com suporte a Oracle Database mas usando dados simulados")
     else:
-        logger.info("Sistema inicializado sem suporte a Oracle Database")
+        logger.info("Sistema inicializado sem suporte a Oracle Database, usando dados simulados")
 
     # Configurar Oracle com credenciais específicas se fornecidas
-    if all([args.oracle_user, args.oracle_password, args.oracle_host]):
+    if all([args.oracle_user, args.oracle_password, args.oracle_host]) and not force_mock_data:
         logger.info("Reconfigurando Oracle com credenciais fornecidas via linha de comando")
-        system.configure_oracle(
+        print(f"Configurando conexão com Oracle Database: {args.oracle_host}")
+        connection_result = system.configure_oracle(
             args.oracle_user,
             args.oracle_password,
             args.oracle_host,
         )
+        
+        if not connection_result:
+            print("ERRO: Não foi possível conectar ao Oracle Database. Os dados serão salvos localmente.")
+            print("      Verifique suas credenciais e a disponibilidade do servidor Oracle.")
+        elif system.using_mock_data:
+            print("AVISO: Conectado ao Oracle Database, mas usando dados simulados.")
+            print("       O esquema do banco de dados pode estar incompleto.")
+        else:
+            print("Conexão com Oracle Database estabelecida com sucesso.")
+            print("Os dados serão persistidos no Oracle Database.")
 
     # Tratar desligamento graciosamente
     def signal_handler(signum, frame):
@@ -354,6 +573,7 @@ def main():
                 system.file_storage,
                 system.oracle_storage,
                 system.display_manager,
+                using_mock_data=system.using_mock_data
             )
             menu.display_menu()
             system.stop()
@@ -369,6 +589,23 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

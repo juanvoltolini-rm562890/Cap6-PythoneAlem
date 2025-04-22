@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from src.storage.oracle_db import OracleStorage
 from src.models.config import EnvironmentalLimits, SystemConfig
+from main import AviaryControlSystem
 
 
 class TestOracleStorageConfigPersistence(unittest.TestCase):
@@ -64,6 +65,40 @@ class TestOracleStorageConfigPersistence(unittest.TestCase):
         # Verifica se commit foi chamado
         mock_conn.commit.assert_called_once()
 
+    @patch("src.storage.oracle_db.oracledb.connect")
+    @patch("time.sleep")  # Mock sleep para não atrasar o teste
+    def test_configure_oracle_retry_mechanism(self, mock_sleep, mock_connect):
+        """Testa o mecanismo de retry na configuração do Oracle."""
+        # Configura o mock para falhar nas primeiras tentativas e depois ter sucesso
+        mock_connect.side_effect = [
+            Exception("Falha na primeira tentativa"),
+            MagicMock()  # Sucesso na segunda tentativa
+        ]
+        
+        # Configura mocks adicionais
+        with patch('src.sensors.reader.SensorReader'), \
+             patch('src.storage.oracle_db.OracleStorage.test_connection', return_value=True), \
+             patch('src.storage.oracle_db.OracleStorage.check_schema_exists', 
+                   return_value={"sensor_readings": True, "actuator_status": True, "alarm_events": True, "system_config": True,
+                                "reading_seq": True, "status_seq": True, "event_seq": True, "config_seq": True}):
+            
+            # Cria o sistema
+            system = AviaryControlSystem(use_oracle=False)
+            
+            # Tenta configurar Oracle
+            result = system.configure_oracle("test_user", "test_password", "test_dsn")
+            
+            # Verifica se o resultado é True (sucesso após retry)
+            self.assertTrue(result)
+            
+            # Verifica se connect foi chamado duas vezes (falha + sucesso)
+            self.assertEqual(mock_connect.call_count, 2)
+            
+            # Verifica se using_mock_data está False
+            self.assertFalse(system.using_mock_data)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

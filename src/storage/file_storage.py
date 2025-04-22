@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..models.config import EnvironmentalLimits, SystemConfig
+from ..models.config import AlertConfig, AlertSeverity, AlertType, EnvironmentalLimits, SystemConfig
 from ..models.device import DeviceStatus, DeviceType, DeviceState
 from ..models.sensor_data import SensorReading
 
@@ -115,22 +115,10 @@ class FileStorage:
             config: Configuração do sistema para salvar
         """
         config_file = self.config_path / "system_config.json"
-        config_data = {
-            "environmental_limits": {
-                "temp_min": config.environmental_limits.temp_min,
-                "temp_max": config.environmental_limits.temp_max,
-                "humidity_min": config.environmental_limits.humidity_min,
-                "humidity_max": config.environmental_limits.humidity_max,
-                "co2_max": config.environmental_limits.co2_max,
-                "ammonia_max": config.environmental_limits.ammonia_max,
-                "pressure_target": config.environmental_limits.pressure_target,
-            },
-            "reading_interval": config.reading_interval,
-            "log_level": config.log_level,
-            "alarm_enabled": config.alarm_enabled,
-            "backup_power_threshold": config.backup_power_threshold,
-        }
-
+        
+        # Usar o método to_dict da classe SystemConfig para obter todos os dados
+        config_data = config.to_dict()
+        
         try:
             with open(config_file, "w") as f:
                 json.dump(config_data, f, indent=2)
@@ -153,14 +141,8 @@ class FileStorage:
             with open(config_file) as f:
                 config_data = json.load(f)
 
-            limits = EnvironmentalLimits(**config_data["environmental_limits"])
-            return SystemConfig(
-                environmental_limits=limits,
-                reading_interval=config_data["reading_interval"],
-                log_level=config_data["log_level"],
-                alarm_enabled=config_data["alarm_enabled"],
-                backup_power_threshold=config_data["backup_power_threshold"],
-            )
+            # Usar o método from_dict da classe SystemConfig para criar a instância
+            return SystemConfig.from_dict(config_data)
         except Exception as e:
             logger.error(f"Falha ao carregar configuração: {e}")
             return None
@@ -980,6 +962,169 @@ class FileStorage:
             logger.error(f"Erro ao criar backup: {e}")
             return None
 
+    def save_alert(self, alert: AlertConfig) -> bool:
+        """Salva um alerta personalizado.
+
+        Args:
+            alert: Configuração do alerta para salvar
+
+        Returns:
+            bool: True se o alerta foi salvo com sucesso, False caso contrário
+        """
+        try:
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                # Se não houver configuração, criar uma nova
+                limits = EnvironmentalLimits(
+                    temp_min=18.0,
+                    temp_max=32.0,
+                    humidity_min=50.0,
+                    humidity_max=70.0,
+                    co2_max=2000.0,
+                    ammonia_max=25.0,
+                    pressure_target=25.0
+                )
+                config = SystemConfig(environmental_limits=limits)
+            
+            # Adicionar ou atualizar o alerta
+            existing_alert = config.get_alert(alert.alert_id)
+            if existing_alert:
+                config.update_alert(alert.alert_id, alert)
+            else:
+                config.add_alert(alert)
+            
+            # Salvar configuração atualizada
+            self.save_config(config)
+            logger.info(f"Alerta {alert.alert_id} salvo com sucesso")
+            return True
+        except Exception as e:
+            logger.error(f"Falha ao salvar alerta: {e}")
+            return False
+    
+    def delete_alert(self, alert_id: str) -> bool:
+        """Remove um alerta personalizado.
+
+        Args:
+            alert_id: ID do alerta a ser removido
+
+        Returns:
+            bool: True se o alerta foi removido com sucesso, False caso contrário
+        """
+        try:
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                return False
+            
+            # Remover o alerta
+            if config.remove_alert(alert_id):
+                # Salvar configuração atualizada
+                self.save_config(config)
+                logger.info(f"Alerta {alert_id} removido com sucesso")
+                return True
+            else:
+                logger.warning(f"Alerta {alert_id} não encontrado")
+                return False
+        except Exception as e:
+            logger.error(f"Falha ao remover alerta: {e}")
+            return False
+    
+    def get_alerts(self) -> List[AlertConfig]:
+        """Obtém todos os alertas personalizados.
+
+        Returns:
+            List[AlertConfig]: Lista de alertas personalizados
+        """
+        try:
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                return []
+            
+            return config.custom_alerts
+        except Exception as e:
+            logger.error(f"Falha ao obter alertas: {e}")
+            return []
+    
+    def get_alert(self, alert_id: str) -> Optional[AlertConfig]:
+        """Obtém um alerta personalizado pelo ID.
+
+        Args:
+            alert_id: ID do alerta a ser obtido
+
+        Returns:
+            Optional[AlertConfig]: Configuração do alerta ou None se não encontrado
+        """
+        try:
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                return None
+            
+            return config.get_alert(alert_id)
+        except Exception as e:
+            logger.error(f"Falha ao obter alerta: {e}")
+            return None
+    
+    def set_persistence_mode(self, mode: str) -> bool:
+        """Define o modo de persistência dos dados.
+
+        Args:
+            mode: Modo de persistência ("local", "oracle", "auto")
+
+        Returns:
+            bool: True se o modo foi definido com sucesso, False caso contrário
+        """
+        try:
+            # Validar o modo
+            if mode.lower() not in {"local", "oracle", "auto"}:
+                logger.error(f"Modo de persistência inválido: {mode}")
+                return False
+            
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                # Se não houver configuração, criar uma nova
+                limits = EnvironmentalLimits(
+                    temp_min=18.0,
+                    temp_max=32.0,
+                    humidity_min=50.0,
+                    humidity_max=70.0,
+                    co2_max=2000.0,
+                    ammonia_max=25.0,
+                    pressure_target=25.0
+                )
+                config = SystemConfig(environmental_limits=limits)
+            
+            # Definir o modo de persistência
+            config.persistence_mode = mode.lower()
+            
+            # Salvar configuração atualizada
+            self.save_config(config)
+            logger.info(f"Modo de persistência definido para {mode}")
+            return True
+        except Exception as e:
+            logger.error(f"Falha ao definir modo de persistência: {e}")
+            return False
+    
+    def get_persistence_mode(self) -> str:
+        """Obtém o modo de persistência dos dados.
+
+        Returns:
+            str: Modo de persistência atual ("local", "oracle", "auto")
+        """
+        try:
+            # Carregar configuração atual
+            config = self.load_config()
+            if not config:
+                return "auto"  # Valor padrão
+            
+            return config.persistence_mode
+        except Exception as e:
+            logger.error(f"Falha ao obter modo de persistência: {e}")
+            return "auto"  # Valor padrão em caso de erro
+    
     def restore_default_config(self) -> bool:
         """Restaura as configurações padrão do sistema.
 
@@ -1093,3 +1238,6 @@ class FileStorage:
             return []
 
         return list(latest_statuses.values())
+
+
+

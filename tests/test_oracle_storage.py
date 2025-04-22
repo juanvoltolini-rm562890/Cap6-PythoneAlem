@@ -118,8 +118,8 @@ class TestOracleStorage:
         # Verifica se o resultado é False
         assert result is False
 
-    def test_test_connection_exception(self):
-        """Testa o método test_connection quando ocorre uma exceção."""
+    def test_test_connection_exception_handled(self):
+        """Testa se o método test_connection trata exceções corretamente."""
         with patch('oracledb.connect') as mock_connect:
             # Configura o mock para lançar uma exceção
             mock_connect.side_effect = Exception("Erro de conexão")
@@ -127,9 +127,9 @@ class TestOracleStorage:
             # Cria a instância
             storage = OracleStorage("test_user", "test_password", "test_dsn")
             
-            # Verifica se test_connection lança a exceção
-            with pytest.raises(Exception, match="Erro de conexão"):
-                storage.test_connection()
+            # Verifica se test_connection retorna False em vez de lançar exceção
+            result = storage.test_connection()
+            assert result is False
 
     def test_store_reading(self, oracle_storage):
         """Testa o método store_reading."""
@@ -265,7 +265,172 @@ class TestOracleStorage:
         
         # Verifica se o teste de conexão retorna True
         assert oracle_storage.test_connection() is True
+    def test_get_latest_readings(self, oracle_storage):
+        """Testa o método get_latest_readings."""
+        # Configura o mock do cursor para retornar leituras simuladas
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
         
+        # Simula dados de leitura
+        mock_data = [
+            (1, datetime(2025, 4, 19, 10, 0, 0), 25.8, 59.5, 786, 10.3, 24.5),
+            (2, datetime(2025, 4, 19, 10, 1, 0), 26.0, 60.0, 790, 10.5, 24.8)
+        ]
+        mock_cursor.fetchall.return_value = mock_data
+        
+        # Chama get_latest_readings
+        readings = oracle_storage.get_latest_readings(limit=2)
+        
+        # Verifica se a consulta foi executada
+        assert mock_cursor.execute.called
+        
+        # Verifica os resultados
+        assert len(readings) == 2
+        assert readings[0]["reading_id"] == 1
+        assert readings[0]["temperature"] == 25.8
+        assert readings[1]["reading_id"] == 2
+        assert readings[1]["temperature"] == 26.0
+
+    def test_get_device_status(self, oracle_storage):
+        """Testa o método get_device_status."""
+        # Configura o mock do cursor para retornar status simulados
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
+        
+        # Simula dados de status
+        mock_data = [
+            (1, datetime(2025, 4, 19, 10, 0, 0), "EXHAUST_FAN", "FAN001", "ON", 100.0),
+            (2, datetime(2025, 4, 19, 10, 1, 0), "CURTAIN", "CURT001", "PARTIAL", 50.0)
+        ]
+        mock_cursor.fetchall.return_value = mock_data
+        
+        # Chama get_device_status
+        status_list = oracle_storage.get_device_status(device_type="EXHAUST_FAN", limit=2)
+        
+        # Verifica se a consulta foi executada
+        assert mock_cursor.execute.called
+        
+        # Verifica os resultados
+        assert len(status_list) == 2
+        assert status_list[0]["status_id"] == 1
+        assert status_list[0]["device_type"] == "EXHAUST_FAN"
+        assert status_list[1]["status_id"] == 2
+        assert status_list[1]["device_type"] == "CURTAIN"
+
+    def test_get_alarms(self, oracle_storage):
+        """Testa o método get_alarms."""
+        # Configura o mock do cursor para retornar alarmes simulados
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
+        
+        # Simula dados de alarme
+        mock_data = [
+            (1, datetime(2025, 4, 19, 10, 0, 0), "AMBIENTAL", "ERROR", "Temperatura alta"),
+            (2, datetime(2025, 4, 19, 10, 1, 0), "AMBIENTAL", "ERROR", "CO2 alto")
+        ]
+        mock_cursor.fetchall.return_value = mock_data
+        
+        # Chama get_alarms
+        alarms = oracle_storage.get_alarms(event_type="AMBIENTAL", limit=2)
+        
+        # Verifica se a consulta foi executada
+        assert mock_cursor.execute.called
+        
+        # Verifica os resultados
+        assert len(alarms) == 2
+        assert alarms[0]["event_id"] == 1
+        assert alarms[0]["event_type"] == "AMBIENTAL"
+        assert alarms[1]["event_id"] == 2
+    def test_verify_persistence_success(self, oracle_storage):
+        """Testa o método _verify_persistence quando o registro existe."""
+        # Configura o mock do cursor para simular um registro existente
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = [1]  # Simula que encontrou um registro
+        
+        # Testa a verificação
+        result = oracle_storage._verify_persistence("test_table", "id_column", 123)
+        
+        # Verifica se a consulta foi executada corretamente
+        mock_cursor.execute.assert_called_with(
+            "SELECT COUNT(*) FROM test_table WHERE id_column = :id",
+            {"id": 123}
+        )
+        
+        # Verifica o resultado
+        assert result is True
+
+    def test_verify_persistence_not_found(self, oracle_storage):
+        """Testa o método _verify_persistence quando o registro não existe."""
+        # Configura o mock do cursor para simular um registro não existente
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = [0]  # Simula que não encontrou registro
+        
+        # Testa a verificação
+        result = oracle_storage._verify_persistence("test_table", "id_column", 123)
+        
+        # Verifica se a consulta foi executada corretamente
+        mock_cursor.execute.assert_called_with(
+            "SELECT COUNT(*) FROM test_table WHERE id_column = :id",
+            {"id": 123}
+        )
+        
+        # Verifica o resultado
+        assert result is False
+
+    def test_verify_persistence_error(self, oracle_storage):
+        """Testa o método _verify_persistence quando ocorre um erro."""
+        # Configura o mock do cursor para simular um erro
+        mock_cursor = MagicMock()
+        oracle_storage._connection.cursor.return_value.__enter__.return_value = mock_cursor
+        mock_cursor.execute.side_effect = Exception("Erro de teste")
+        
+        # Testa a verificação
+        result = oracle_storage._verify_persistence("test_table", "id_column", 123)
+        
+        # Verifica se a consulta foi tentada
+        mock_cursor.execute.assert_called_with(
+            "SELECT COUNT(*) FROM test_table WHERE id_column = :id",
+            {"id": 123}
+        )
+        
+        # Verifica o resultado
+        assert result is False
+
+    def test_retry_mechanism_in_initialize_schema(self):
+        """Testa o mecanismo de retry na função initialize_schema."""
+        with patch('oracledb.connect') as mock_connect, \
+             patch('time.sleep') as mock_sleep, \
+             patch('builtins.open', create=True) as mock_open, \
+             patch('db.setup_db.initialize_schema') as mock_initialize:
+            
+            # Configura o mock para falhar nas primeiras tentativas e depois ter sucesso
+            mock_connect.side_effect = [
+                Exception("Falha na primeira tentativa"),
+                MagicMock()  # Sucesso na segunda tentativa
+            ]
+            
+            # Configura o mock para o arquivo SQL
+            mock_file = MagicMock()
+            mock_file.read.return_value = "CREATE TABLE test_table (id NUMBER);"
+            mock_open.return_value.__enter__.return_value = mock_file
+            
+            # Importa a função
+            from db.setup_db import initialize_schema
+            
+            # Chama a função
+            result = initialize_schema("test_user", "test_password", "test_dsn")
+            
+            # Verifica se o resultado é True (sucesso após retry)
+            assert result is True
+            
+            # Verifica se connect foi chamado duas vezes (falha + sucesso)
+            assert mock_connect.call_count == 2
+            
+            # Verifica se sleep foi chamado para esperar entre tentativas
+            assert mock_sleep.called
+            
     def test_connection_fix(self):
         """Testa o método test_connection_fix."""
         # Executa o teste de correção de conexão
@@ -290,6 +455,13 @@ class TestOracleStorage:
             
             # Verifica se connect foi chamado com os parâmetros corretos
             mock_connect.assert_called_once()
+
+
+
+
+
+
+
 
 
 

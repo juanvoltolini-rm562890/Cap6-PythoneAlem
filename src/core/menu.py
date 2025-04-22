@@ -33,6 +33,7 @@ class MenuManager:
         file_storage: FileStorage,
         oracle_storage: Optional[OracleStorage] = None,
         display_manager: Optional['DisplayManager'] = None,
+        using_mock_data: bool = False,
     ):
         """Inicializa o gerenciador de menu.
 
@@ -41,11 +42,13 @@ class MenuManager:
             file_storage: Instância do armazenamento em arquivo
             oracle_storage: Instância opcional do armazenamento Oracle
             display_manager: Instância opcional do gerenciador de exibição
+            using_mock_data: Indica se estão sendo usados dados simulados
         """
         self.config = config
         self.file_storage = file_storage
         self.oracle_storage = oracle_storage
         self.display_manager = display_manager
+        self.using_mock_data = using_mock_data
 
     def display_menu(self):
         """Exibe e processa o menu interativo."""
@@ -55,6 +58,13 @@ class MenuManager:
             self.display_manager.set_display_mode(DisplayMode.MENU)
 
         try:
+            # Mostrar aviso sobre dados simulados se necessário
+            if self.using_mock_data and self.oracle_storage:
+                print("\n" + "="*60)
+                print("⚠️  AVISO: Usando dados simulados pois o banco Oracle não contém dados.")
+                print("    As tabelas estão sendo preenchidas com dados gerados automaticamente.")
+                print("="*60)
+            
             while True:
                 print("\n=== Sistema de Controle de Aviário ===")
                 print("1. Gerenciar Dados do Sistema")
@@ -264,6 +274,17 @@ class MenuManager:
         try:
             # Tentar obter a leitura mais recente
             reading = self.file_storage.get_latest_reading()
+            
+            # Verificar se estamos usando dados simulados do Oracle
+            using_mock_data = False
+            if self.oracle_storage:
+                try:
+                    readings = self.oracle_storage.get_latest_readings(1)
+                    if readings and any(reading.get('reading_id', 0) < 0 for reading in readings):
+                        using_mock_data = True
+                except:
+                    pass
+            
             if reading:
                 print(f"\nHorário da Leitura: {reading.timestamp:%Y-%m-%d %H:%M:%S}")
                 print(f"Temperatura Interna: {reading.temperature:.1f}°C")
@@ -273,8 +294,27 @@ class MenuManager:
                 print(f"Nível de Amônia: {reading.ammonia_level} ppm")
                 print(f"Pressão: {reading.pressure} Pa")
                 print(f"Status de Energia: {'Normal' if reading.power_ok else 'Bateria'}")
+                
+                if using_mock_data:
+                    print("\n⚠️ NOTA: Exibindo dados simulados pois o banco Oracle não contém dados reais.")
             else:
                 print("\nNenhuma leitura disponível.")
+                
+                # Se não há leitura local, mas temos Oracle com dados simulados
+                if self.oracle_storage:
+                    try:
+                        readings = self.oracle_storage.get_latest_readings(1)
+                        if readings:
+                            reading = readings[0]
+                            print("\n--- Dados Simulados do Oracle ---")
+                            print(f"Temperatura: {reading['temperature']:.1f}°C")
+                            print(f"Umidade: {reading['humidity']:.1f}%")
+                            print(f"Nível de CO₂: {reading['co2_level']} ppm")
+                            print(f"Nível de Amônia: {reading['ammonia_level']} ppm")
+                            print(f"Pressão: {reading['pressure']} Pa")
+                            print("\n⚠️ NOTA: Exibindo dados simulados pois o banco Oracle não contém dados reais.")
+                    except Exception as e:
+                        print(f"Erro ao obter dados simulados: {e}")
         except Exception as e:
             print(f"Erro ao obter leituras: {e}")
         input("\nPressione Enter para continuar...")
@@ -284,6 +324,17 @@ class MenuManager:
         print("\n=== Status dos Dispositivos ===")
         try:
             devices = self.file_storage.get_device_status()
+            
+            # Verificar se estamos usando dados simulados do Oracle
+            using_mock_data = False
+            if self.oracle_storage:
+                try:
+                    status_list = self.oracle_storage.get_device_status(limit=1)
+                    if status_list and any(status.get('status_id', 0) < 0 for status in status_list):
+                        using_mock_data = True
+                except:
+                    pass
+            
             if devices:
                 # Group devices by type
                 ventilation_devices = [d for d in devices if d.device_type in (DeviceType.EXHAUST_FAN, DeviceType.INLET)]
@@ -340,8 +391,39 @@ class MenuManager:
                         print(f"  - {neb.device_id}: {status}")
                 else:
                     print("\nNebulizadores: Não disponível")
+                
+                if using_mock_data:
+                    print("\n⚠️ NOTA: Exibindo dados simulados pois o banco Oracle não contém dados reais.")
             else:
                 print("\nStatus dos dispositivos não disponível.")
+                
+                # Se não há status local, mas temos Oracle com dados simulados
+                if self.oracle_storage:
+                    try:
+                        status_list = self.oracle_storage.get_device_status()
+                        if status_list:
+                            print("\n--- Dados Simulados do Oracle ---")
+                            
+                            # Agrupar por tipo de dispositivo
+                            device_types = {}
+                            for status in status_list:
+                                device_type = status['device_type']
+                                if device_type not in device_types:
+                                    device_types[device_type] = []
+                                device_types[device_type].append(status)
+                            
+                            # Exibir por tipo
+                            for device_type, statuses in device_types.items():
+                                print(f"\n{device_type}:")
+                                for status in statuses:
+                                    state_value = ""
+                                    if status['status'] == "PARTIAL" and status['value'] is not None:
+                                        state_value = f" ({status['value']}%)"
+                                    print(f"  - {status['device_id']}: {status['status']}{state_value}")
+                            
+                            print("\n⚠️ NOTA: Exibindo dados simulados pois o banco Oracle não contém dados reais.")
+                    except Exception as e:
+                        print(f"Erro ao obter dados simulados: {e}")
         except Exception as e:
             print(f"Erro ao obter status dos dispositivos: {e}")
         input("\nPressione Enter para continuar...")
@@ -363,10 +445,21 @@ class MenuManager:
             
             # Verificar banco Oracle se disponível
             oracle_status = "N/A"
+            oracle_data_status = "N/A"
             if self.oracle_storage:
                 try:
                     self.oracle_storage.test_connection()
                     oracle_status = "Conectado"
+                    
+                    # Verificar se há dados no Oracle
+                    try:
+                        readings = self.oracle_storage.get_latest_readings(1)
+                        if readings and not any(reading.get('reading_id', 0) < 0 for reading in readings):
+                            oracle_data_status = "Dados Reais"
+                        else:
+                            oracle_data_status = "Dados Simulados"
+                    except:
+                        oracle_data_status = "Erro ao verificar dados"
                 except:
                     oracle_status = "Falha"
             
@@ -374,6 +467,7 @@ class MenuManager:
             print(f"Sensores: {sensor_status}")
             print(f"Armazenamento Local: {'OK' if storage_ok else 'Falha'}")
             print(f"Banco de Dados Oracle: {oracle_status}")
+            print(f"Dados Oracle: {oracle_data_status}")
             
             if reading:
                 print("\n--- Alertas ---")
@@ -572,6 +666,11 @@ class MenuManager:
         print(f"Amônia máxima: {limits.ammonia_max} ppm")
         print(f"Pressão alvo: {limits.pressure_target} Pa")
         input("\nPressione Enter para continuar...")
+
+
+
+
+
 
 
 

@@ -114,3 +114,100 @@ class TestAviaryControlSystem:
         
         # Verifica se o oracle_storage é None devido à exceção
         assert system.oracle_storage is None
+        
+    def test_configure_oracle_success(self, mock_oracle_storage, mock_file_storage):
+        """Testa o método configure_oracle quando a conexão é bem-sucedida."""
+        # Configura o mock do OracleStorage
+        mock_oracle_instance = mock_oracle_storage.return_value
+        mock_oracle_instance.test_connection.return_value = True
+        mock_oracle_instance.check_schema_exists.return_value = {
+            "sensor_readings": True,
+            "actuator_status": True,
+            "alarm_events": True,
+            "reading_seq": True,
+            "status_seq": True,
+            "event_seq": True
+        }
+        
+        # Inicializa o sistema com Oracle desabilitado
+        system = AviaryControlSystem(use_oracle=False)
+        
+        # Configura Oracle
+        result = system.configure_oracle("test_user", "test_password", "test_dsn")
+        
+        # Verifica se o OracleStorage foi inicializado com os parâmetros corretos
+        mock_oracle_storage.assert_called_once_with("test_user", "test_password", "test_dsn")
+        
+        # Verifica se os métodos do OracleStorage foram chamados
+        mock_oracle_instance.connect.assert_called_once()
+        mock_oracle_instance.test_connection.assert_called_once()
+        mock_oracle_instance.check_schema_exists.assert_called_once()
+        
+        # Verifica se o resultado é True
+        assert result is True
+        
+        # Verifica se o oracle_storage foi configurado corretamente
+        assert system.oracle_storage is not None
+        assert system.oracle_storage == mock_oracle_instance
+        
+        # Verifica se using_mock_data é False
+        assert system.using_mock_data is False
+        
+    def test_configure_oracle_connection_failure(self, mock_oracle_storage, mock_file_storage):
+        """Testa o método configure_oracle quando a conexão falha."""
+        # Configura o mock do OracleStorage para simular falha na conexão
+        mock_oracle_instance = mock_oracle_storage.return_value
+        mock_oracle_instance.test_connection.return_value = False
+        
+        # Inicializa o sistema com Oracle desabilitado
+        system = AviaryControlSystem(use_oracle=False)
+        
+        # Configura Oracle
+        result = system.configure_oracle("test_user", "test_password", "test_dsn")
+        
+        # Verifica se o OracleStorage foi inicializado com os parâmetros corretos
+        mock_oracle_storage.assert_called_once_with("test_user", "test_password", "test_dsn")
+        
+        # Verifica se os métodos do OracleStorage foram chamados
+        mock_oracle_instance.connect.assert_called_once()
+        mock_oracle_instance.test_connection.assert_called_once()
+        
+        # Verifica se o resultado é False
+        assert result is False
+        
+        # Verifica se using_mock_data é True
+        assert system.using_mock_data is True
+        
+    def test_configure_oracle_schema_incomplete(self, mock_oracle_storage, mock_file_storage):
+        """Testa o método configure_oracle quando o esquema está incompleto."""
+        # Configura o mock do OracleStorage
+        mock_oracle_instance = mock_oracle_storage.return_value
+        mock_oracle_instance.test_connection.return_value = True
+        mock_oracle_instance.check_schema_exists.return_value = {
+            "sensor_readings": True,
+            "actuator_status": False,  # Tabela ausente
+            "alarm_events": True,
+            "reading_seq": True,
+            "status_seq": True,
+            "event_seq": True
+        }
+        
+        # Configura o mock para initialize_schema
+        with patch('db.setup_db.initialize_schema') as mock_initialize:
+            # Configura o mock para retornar True (sucesso)
+            mock_initialize.return_value = True
+            
+            # Inicializa o sistema com Oracle desabilitado
+            system = AviaryControlSystem(use_oracle=False)
+            
+            # Configura Oracle
+            result = system.configure_oracle("test_user", "test_password", "test_dsn")
+            
+            # Verifica se initialize_schema foi chamado
+            mock_initialize.assert_called_once_with("test_user", "test_password", "test_dsn")
+            
+            # Verifica se o resultado é True
+            assert result is True
+            
+            # Verifica se using_mock_data é False
+            assert system.using_mock_data is False
