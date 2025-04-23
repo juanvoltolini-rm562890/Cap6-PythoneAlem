@@ -50,25 +50,17 @@ venv\\Scripts\\activate   # Windows
 pip install -r requirements.txt
 ```
 
-### 4. Configure o banco de dados Oracle (Não funciona com o banco de dados da FIAP por falta de permissão aos nossos usuários)
+### 4. Configure o banco de dados Oracle
 
 1. **Defina as credenciais do banco de dados como variáveis de ambiente no MACOS:**
 
-No terminal, execute:
+Abra o arquivo db/config.py e ajuste os valores abaixo:
 
 ```bash
-export DB_USERNAME="rmXXXXXX"
-export DB_PASSWORD="XXXXXX"
-export DB_DSN="oracle.fiap.com.br/orcl"
-```
-
-Opcionalmente, você pode adicionar essas variáveis ao arquivo `~/.zshrc` (se estiver usando o Zsh, que é o padrão no macOS) ou ao `~/.bash_profile`, caso esteja usando o Bash:
-
-```bash
-echo 'export DB_USERNAME="rmXXXXXX"' >> ~/.zshrc
-echo 'export DB_PASSWORD="XXXXXX"' >> ~/.zshrc
-echo 'export DB_DSN="oracle.fiap.com.br/orcl"' >> ~/.zshrc
-source ~/.zshrc
+username = ""
+password = ""
+dsn = "oracle.fiap.com.br:1521/orcl"
+schema = ""
 ```
 
 2. **Execute o script:**
